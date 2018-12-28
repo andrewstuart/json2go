@@ -78,6 +78,7 @@ var (
 	mapType    bool
 	help       bool
 	tagKeys    stringArr
+	noEmbed    bool
 )
 
 func init() {
@@ -95,6 +96,8 @@ func init() {
 	flag.BoolVar(&writeJSON, "w", false, "the short flag for -writejson")
 	flag.BoolVar(&importJSON, "addimport", false, "add import statement for encoding/json")
 	flag.BoolVar(&importJSON, "a", false, "the short flag for -addimport")
+	flag.BoolVar(&noEmbed, "noembed", false, "don't embed nested struct types")
+	flag.BoolVar(&noEmbed, "E", false, "the short flag for -noembed")
 	flag.BoolVar(&mapType, "maptype", false, "the provided json is a map type; not a struct type")
 	flag.BoolVar(&mapType, "m", false, "the short flag for -maptype")
 	flag.BoolVar(&help, "help", false, "json2go help")
@@ -187,6 +190,7 @@ func realMain() int {
 	}
 	// create the transmogrifier and configure it.
 	t := json2go.NewTransmogrifier(name, in, out)
+	t.NoEmbed = noEmbed
 	if writeJSON {
 		t.WriteJSON = writeJSON
 		t.SetJSONWriter(jsn)
@@ -249,6 +253,7 @@ flag              default   description
 -a  -addimport    false     Add import statement for 'encoding/json'.
 -m  -maptype      false     Interpret the JSON as a map type instead
                             of a struct type.
+-E  -noembed			false			Don't embed nested struct types
 -s  -structname   Struct    The name of the struct; only used in
                             conjunction with -maptype.
 -h  -help         false     Print the help text; 'help' is also valid.

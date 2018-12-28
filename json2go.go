@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jinzhu/inflection"
 	"github.com/mohae/firkin/queue"
 )
 
@@ -43,6 +44,7 @@ type Transmogrifier struct {
 	name       string
 	structName string
 	pkg        string
+
 	// tagKeys are additional tag keys that should be included in the
 	// field's tag.  These tags are in addition to the `json` tag.
 	tagKeys []string
@@ -63,6 +65,8 @@ type Transmogrifier struct {
 	//
 	// If false, a struct definition will be generated for the type.
 	MapType bool
+	// NoEmbed is whether nested types should be embedded in the generated code.
+	NoEmbed bool
 }
 
 // NewTransmogrifier returns a new transmogrifier that reads from r and writes
@@ -185,15 +189,17 @@ func (t *Transmogrifier) Gen() error {
 		} else {
 			buff.WriteString(fmt.Sprintf("type %s map[string]%s\n\n", t.name, t.structName))
 		}
-		q.Enqueue(newStructDef(t.structName, val.Elem()))
-		goto DEFINE
+		ns := newStructDef(t.structName, val.Elem())
+		ns.noEmbed = t.NoEmbed
+		q.Enqueue(ns)
+	} else {
+		// start the worker
+		// send initial work item
+		ns := newStructDef(t.name, reflect.ValueOf(def))
+		ns.noEmbed = t.NoEmbed
+		q.Enqueue(ns)
 	}
 
-	// start the worker
-	// send initial work item
-	q.Enqueue(newStructDef(t.name, reflect.ValueOf(def)))
-
-DEFINE:
 	go func() {
 		defineStruct(q, t.tagKeys, result, &wg)
 	}()
@@ -221,9 +227,10 @@ DEFINE:
 }
 
 type structDef struct {
-	name string
-	val  reflect.Value
-	buff bytes.Buffer
+	name    string
+	val     reflect.Value
+	buff    bytes.Buffer
+	noEmbed bool
 }
 
 func newStructDef(name string, val reflect.Value) structDef {
@@ -282,8 +289,7 @@ func GenMapType(typeName, name string, tagKeys []string, data []byte) ([]byte, e
 	q := queue.NewQ(2)
 	result := make(chan []byte)
 	// create first work item and add to the queue
-	s := newStructDef(name, val.Elem())
-	q.Enqueue(s)
+	q.Enqueue(newStructDef(name, val.Elem()))
 	// start the worker &  send initial work item
 	go func() {
 		defineStruct(q, tagKeys, result, &wg)
@@ -321,16 +327,25 @@ func defineStruct(q *queue.Queue, tagKeys []string, result chan []byte, wg *sync
 			// maps are embedded structs
 			if typ == reflect.Map.String() {
 				tmp := newStructDef(k, val.Elem())
+				tmp.noEmbed = s.noEmbed
 				q.Enqueue(tmp)
-				s.buff.WriteString(fmt.Sprintf("\t%s `json:%q`\n", k, tag))
+				if s.noEmbed {
+					s.buff.WriteString(fmt.Sprintf("\t%s %s `json:%q`\n", k, k, tag))
+				} else {
+					s.buff.WriteString(fmt.Sprintf("\t%s `json:%q`\n", k, tag))
+				}
 				continue
 			}
 			// a slicemap is a signal that it is a []T which means pluralize
 			// the field name and generate the embedded struct
 			if typ == "slicemap" {
-				tmp := newStructDef(k, val.Elem().Index(0).Elem())
+				singular := inflection.Singular(k)
+				k = inflection.Plural(singular)
+
+				tmp := newStructDef(singular, val.Elem().Index(0).Elem())
+				tmp.noEmbed = s.noEmbed
 				q.Enqueue(tmp)
-				s.buff.WriteString(fmt.Sprintf("\t%ss []%s ", k, k))
+				s.buff.WriteString(fmt.Sprintf("\t%s []%s ", k, singular))
 				s.buff.WriteString(defineFieldTags(tag, tagKeys))
 				s.buff.WriteRune('\n')
 				continue

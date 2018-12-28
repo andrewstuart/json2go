@@ -3,7 +3,10 @@ package json2go
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 var basic = []byte(`{
@@ -114,9 +117,7 @@ func TestWidget(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
-	if buff.String() != expectedWidgetPkg {
-		t.Errorf("expected %q got %q", expectedWidgetPkg, buff.String())
-	}
+	assert.Equal(t, expectedWidgetPkg, buff.String())
 }
 
 var wnull = []byte(`{
@@ -443,11 +444,51 @@ func TestEmptySlice(t *testing.T) {
 	r := bytes.NewReader([]byte(test))
 	var buff bytes.Buffer
 	calvin := NewTransmogrifier("test", r, &buff)
+
 	err := calvin.Gen()
-	if err !=  nil {
+	if err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
-	if buff.String () != expected {
+	if buff.String() != expected {
 		t.Errorf("got %q want %q", buff.String(), expected)
 	}
+}
+
+func TestDepluralize(t *testing.T) {
+	r := strings.NewReader(`{
+	"people": [{"name":"steve"}],
+	"tags": [{"id": 1}, {"id": 2}]
+}`)
+
+	b := &bytes.Buffer{}
+	err := NewTransmogrifier("test", r, b).Gen()
+	if err != nil {
+		t.Fatal("Got error transmogrifying pluralized keys", err.Error())
+	}
+
+	assert.Equal(
+		t,
+		"package main\n\ntype Test struct {\n\tPeople []Person `json:\"people\"`\n\tTags   []Tag    `json:\"tags\"`\n}\n\ntype Person struct {\n\tName string `json:\"name\"`\n}\n\ntype Tag struct {\n\tID int `json:\"id\"`\n}\n",
+		b.String(),
+	)
+}
+
+func TestNoEmbed(t *testing.T) {
+	r := strings.NewReader(`{
+	"dude": {"name":"steve"}
+}`)
+
+	b := &bytes.Buffer{}
+	tm := NewTransmogrifier("test", r, b)
+	tm.NoEmbed = true
+	err := tm.Gen()
+	if err != nil {
+		t.Fatal("Got error transmogrifying pluralized keys", err.Error())
+	}
+
+	assert.Equal(
+		t,
+		"package main\n\ntype Test struct {\n\tDude Dude `json:\"dude\"`\n}\n\ntype Dude struct {\n\tName string `json:\"name\"`\n}\n",
+		b.String(),
+	)
 }

@@ -1,6 +1,6 @@
 module github.com/mohae/json2go
 
-go 1.18
+go 1.17
 
 require (
 	github.com/jinzhu/inflection v1.0.0
